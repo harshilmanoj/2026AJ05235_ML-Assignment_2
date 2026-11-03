@@ -1,5 +1,6 @@
 import json
 import io
+import hashlib
 from pathlib import Path
 
 import joblib
@@ -1492,6 +1493,69 @@ if DARK_MODE:
             opacity: 1 !important;
         }
 
+    /* Model-comparison action: focused champagne button, no red primary ring */
+    .st-key-run_model_comparison button,
+    .st-key-run_model_comparison button:hover,
+    .st-key-run_model_comparison button:focus,
+    .st-key-run_model_comparison button:focus-visible,
+    .st-key-run_model_comparison button:active,
+    .st-key-run_model_comparison [data-testid="stBaseButton-secondary"] {
+        min-height: 48px !important;
+        padding: .72rem 1.35rem !important;
+        border: 1px solid rgba(255, 231, 187, .78) !important;
+        border-radius: 13px !important;
+        background: linear-gradient(135deg, #F0CC8B 0%, #D9A95E 100%) !important;
+        color: #172033 !important;
+        -webkit-text-fill-color: #172033 !important;
+        font-family: 'Manrope', sans-serif !important;
+        font-size: .9rem !important;
+        font-weight: 800 !important;
+        line-height: 1.25 !important;
+        letter-spacing: -.01em !important;
+        box-shadow:
+            0 7px 18px rgba(226, 182, 108, .16),
+            inset 0 1px 0 rgba(255, 255, 255, .34) !important;
+        outline: none !important;
+        transition:
+            background .18s ease,
+            border-color .18s ease,
+            box-shadow .18s ease,
+            transform .18s ease !important;
+    }
+    .st-key-run_model_comparison button p,
+    .st-key-run_model_comparison button span,
+    .st-key-run_model_comparison button div {
+        margin: 0 !important;
+        color: #172033 !important;
+        -webkit-text-fill-color: #172033 !important;
+        font-family: 'Manrope', sans-serif !important;
+        font-weight: 800 !important;
+        opacity: 1 !important;
+    }
+    .st-key-run_model_comparison button:hover {
+        background: linear-gradient(135deg, #F7DCA8 0%, #E8BD73 100%) !important;
+        border-color: #FFF0CF !important;
+        box-shadow:
+            0 10px 24px rgba(226, 182, 108, .23),
+            inset 0 1px 0 rgba(255, 255, 255, .42) !important;
+        transform: translateY(-1px);
+    }
+    .st-key-run_model_comparison button:focus,
+    .st-key-run_model_comparison button:focus-visible,
+    .st-key-run_model_comparison button:active {
+        outline: none !important;
+        border-color: #FFF0CF !important;
+        box-shadow:
+            0 0 0 2px rgba(232, 189, 115, .20),
+            0 7px 18px rgba(226, 182, 108, .16),
+            inset 0 1px 0 rgba(255, 255, 255, .34) !important;
+    }
+    .st-key-run_model_comparison button:disabled {
+        opacity: .62 !important;
+        cursor: not-allowed !important;
+        transform: none !important;
+    }
+
     </style>
         """,
         unsafe_allow_html=True,
@@ -1509,10 +1573,11 @@ if DARK_MODE:
     })
 
 
-# MODEL LOADING
+# MODEL AND METADATA LOADING
 
-@st.cache_resource
-def load_models():
+@st.cache_data(show_spinner=False)
+def load_metadata():
+    """Load only the small metadata file; do not load model objects at startup."""
     if not METADATA_FILE.exists():
         raise FileNotFoundError(
             "model_metadata.json was not found. Export the trained models "
@@ -1526,15 +1591,39 @@ def load_models():
         raise ValueError(
             "model_metadata.json must contain 'models' and 'features'."
         )
+    if not metadata["models"] or not metadata["features"]:
+        raise ValueError(
+            "model_metadata.json must list at least one model and one feature."
+        )
 
+    return metadata
+
+
+@st.cache_resource(show_spinner=False)
+def load_model(file_stem, model_mtime_ns):
+    """Load and cache one classifier when it is first needed."""
+    model_path = MODEL_DIR / f"{file_stem}.joblib"
+    if not model_path.exists():
+        raise FileNotFoundError(f"Trained model file not found: {model_path}")
+    return joblib.load(model_path)
+
+
+@st.cache_resource(show_spinner=False)
+def load_models():
+    """Load all classifiers only when the user explicitly runs model comparison."""
+    metadata = load_metadata()
     loaded_models = {}
+
     for file_stem, display_name in metadata["models"].items():
         model_path = MODEL_DIR / f"{file_stem}.joblib"
         if not model_path.exists():
             raise FileNotFoundError(f"Trained model file not found: {model_path}")
-        loaded_models[display_name] = joblib.load(model_path)
+        loaded_models[display_name] = load_model(
+            file_stem,
+            model_path.stat().st_mtime_ns,
+        )
 
-    return metadata, loaded_models
+    return loaded_models
 
 
 
@@ -1814,14 +1903,14 @@ def page_header(kicker, title, description):
     st.markdown(f'<div class="section-note">{description}</div>', unsafe_allow_html=True)
 
 
-# Load saved classifiers before rendering the overview model list.
+# Load lightweight metadata only. Classifier files are loaded on demand.
 try:
-    metadata, models = load_models()
+    metadata = load_metadata()
     feature_columns = metadata["features"]
-    model_load_error = None
+    metadata_error = None
 except Exception as error:
-    metadata, models, feature_columns = {}, {}, []
-    model_load_error = str(error)
+    metadata, feature_columns = {}, []
+    metadata_error = str(error)
 
 
 
@@ -1920,7 +2009,7 @@ if True:
         unsafe_allow_html=True,
     )
 
-    model_names = list(models.keys()) if models else [
+    model_names = list(metadata["models"].values()) if metadata else [
         "Logistic Regression",
         "Decision Tree",
         "K-Nearest Neighbors",
@@ -1975,22 +2064,22 @@ if True:
     test_data = X_test = y_test = None
     data_error = None
 
-    if uploaded_file is not None and not model_load_error:
+    if uploaded_file is not None and not metadata_error:
         try:
             test_data, X_test, y_test = load_test_data(uploaded_file, feature_columns)
         except Exception as error:
             data_error = str(error)
 
-    if model_load_error:
+    if metadata_error:
         with st.expander("Model setup information"):
-            st.warning("The trained models are not currently available.")
-            st.code(model_load_error)
+            st.warning("Model metadata is not currently available.")
+            st.code(metadata_error)
             st.caption(
                 "Place model_metadata.json and the model folder beside app.py. "
                 "The metadata must list the saved model filenames and feature columns."
             )
 
-    if uploaded_file is not None and not model_load_error:
+    if uploaded_file is not None and not metadata_error:
         if data_error:
             st.error(f"Dataset validation failed: {data_error}")
         elif test_data is not None:
@@ -2071,9 +2160,9 @@ if True:
         "Select a trained model and inspect its predictive performance on the uploaded test dataset.",
     )
 
-    if model_load_error:
-        st.error("Models are unavailable. Resolve the model-loading issue first.")
-        st.code(model_load_error)
+    if metadata_error:
+        st.error("Model metadata is unavailable. Resolve the setup issue first.")
+        st.code(metadata_error)
     elif uploaded_file is None:
         st.warning("No dataset uploaded. Use the dataset upload area above to select test_data.csv.")
     elif data_error:
@@ -2082,7 +2171,7 @@ if True:
         top1, top2, top3 = st.columns(3)
         top1.metric("Test records", f"{len(test_data):,}")
         top2.metric("Input features", len(feature_columns))
-        top3.metric("Available classifiers", len(models))
+        top3.metric("Available classifiers", len(metadata["models"]))
 
         # Dedicated, high-contrast glass panel makes model selection obvious.
         with st.container(key="model_picker_panel", border=True):
@@ -2102,7 +2191,7 @@ if True:
                 )
                 selected_name = st.selectbox(
                     "SELECT CLASSIFICATION MODEL",
-                    list(models.keys()),
+                    list(metadata["models"].values()),
                     label_visibility="visible",
                     key="evaluation_model_selector",
                 )
@@ -2111,16 +2200,28 @@ if True:
                     f"""
                     <div class="model-picker-meta">
                         <div class="model-picker-meta-label">AVAILABLE MODELS</div>
-                        <div class="model-picker-meta-value">{len(models)} trained classifiers</div>
+                        <div class="model-picker-meta-value">{len(metadata["models"])} trained classifiers</div>
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
         try:
-            predictions, scores, metrics = evaluate_model(
-                models[selected_name], X_test, y_test
+            selected_stem = next(
+                stem
+                for stem, display_name in metadata["models"].items()
+                if display_name == selected_name
             )
+            selected_model_path = MODEL_DIR / f"{selected_stem}.joblib"
+
+            with st.spinner(f"Loading {selected_name} and evaluating the test set..."):
+                selected_model = load_model(
+                    selected_stem,
+                    selected_model_path.stat().st_mtime_ns,
+                )
+                predictions, scores, metrics = evaluate_model(
+                    selected_model, X_test, y_test
+                )
 
             st.markdown("### Performance metrics")
             metric_cols = st.columns(3)
@@ -2318,26 +2419,75 @@ if True:
         "Every model is evaluated on the same uploaded test records for a fair comparison.",
     )
 
-    if model_load_error:
-        st.error("Models are unavailable.")
-        st.code(model_load_error)
+    if metadata_error:
+        st.error("Model metadata is unavailable.")
+        st.code(metadata_error)
     elif uploaded_file is None:
         st.warning("Upload test_data.csv in the dataset section near the top of this page.")
     elif data_error:
         st.error(f"Dataset could not be loaded: {data_error}")
     else:
-        comparison_rows = []
-        failed_models = []
+        # Keep comparison results for this exact uploaded CSV. A new CSV
+        # clears the old comparison so results cannot be confused across datasets.
+        dataset_signature = hashlib.sha256(uploaded_file.getvalue()).hexdigest()
+        if st.session_state.get("comparison_dataset_signature") != dataset_signature:
+            st.session_state["comparison_dataset_signature"] = dataset_signature
+            st.session_state["comparison_results"] = None
+            st.session_state["comparison_errors"] = []
+            st.session_state["comparison_load_error"] = None
 
-        for model_name, model in models.items():
+        st.markdown(
+            "Run the benchmark when you are ready. The five saved classifiers "
+            "will be loaded and evaluated once, then the results will remain available."
+        )
+
+        if st.button(
+            "Run comparison across all classifiers",
+            type="secondary",
+            key="run_model_comparison",
+            use_container_width=False,
+        ):
+            comparison_rows = []
+            failed_models = []
+
             try:
-                _, _, model_metrics = evaluate_model(model, X_test, y_test)
-                comparison_rows.append({"Model": model_name, **model_metrics})
-            except Exception as error:
-                failed_models.append((model_name, str(error)))
+                with st.spinner(
+                    "Loading the saved classifiers and comparing model performance..."
+                ):
+                    comparison_models = load_models()
 
-        if comparison_rows:
-            comparison = pd.DataFrame(comparison_rows).set_index("Model")
+                    for model_name, model in comparison_models.items():
+                        try:
+                            _, _, model_metrics = evaluate_model(model, X_test, y_test)
+                            comparison_rows.append(
+                                {"Model": model_name, **model_metrics}
+                            )
+                        except Exception as error:
+                            failed_models.append((model_name, str(error)))
+
+                if comparison_rows:
+                    st.session_state["comparison_results"] = (
+                        pd.DataFrame(comparison_rows).set_index("Model")
+                    )
+                else:
+                    st.session_state["comparison_results"] = None
+
+                st.session_state["comparison_errors"] = failed_models
+                st.session_state["comparison_load_error"] = None
+
+            except Exception as error:
+                st.session_state["comparison_results"] = None
+                st.session_state["comparison_errors"] = []
+                st.session_state["comparison_load_error"] = str(error)
+
+        comparison_error = st.session_state.get("comparison_load_error")
+        if comparison_error:
+            st.error(f"Could not load the classifiers for comparison: {comparison_error}")
+
+        comparison = st.session_state.get("comparison_results")
+        failed_models = st.session_state.get("comparison_errors", [])
+
+        if comparison is not None:
 
             st.markdown("### Model performance summary")
             st.caption(
@@ -2576,6 +2726,13 @@ if True:
                 comparison.reset_index().to_csv(index=False).encode("utf-8"),
                 file_name="model_comparison_results.csv",
                 mime="text/csv",
+            )
+
+        if comparison is None and not comparison_error:
+            st.info(
+                "Model comparison has not been run yet. Select **Run comparison "
+                "across all classifiers** to load the five models and calculate "
+                "their metrics."
             )
 
         for model_name, error_message in failed_models:
