@@ -4,9 +4,11 @@ import hashlib
 from pathlib import Path
 
 import joblib
+import matplotlib
+
+matplotlib.use("Agg")  # headless backend: faster, no GUI overhead
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 import streamlit as st
 from sklearn.metrics import (
     accuracy_score,
@@ -39,11 +41,17 @@ DARK_MODE = True
 
 
 # STYLING
+# Fonts are loaded with <link> + preconnect (non-blocking, display=swap)
+# instead of a render-blocking CSS @import.
+st.markdown(
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap">',
+    unsafe_allow_html=True,
+)
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
-
     :root {
         --canvas: #f6f7f9;
         --paper: #ffffff;
@@ -1628,12 +1636,17 @@ def load_models():
 
 
 # DATA VALIDATION AND EVALUATION
-def load_test_data(uploaded_file, feature_columns):
-    # UploadedFile behaves like a file handle. Reading it directly can fail
-    # when its cursor has already moved to the end during a previous rerun.
-    # getvalue() always returns the complete uploaded file contents.
-    file_bytes = uploaded_file.getvalue()
+@st.cache_data(show_spinner=False, max_entries=3)
+def load_test_data_cached(file_bytes, feature_columns):
+    """Parse and validate once per unique (file, features); reruns are free."""
+    return _load_test_data(file_bytes, feature_columns)
 
+
+def load_test_data(uploaded_file, feature_columns):
+    return load_test_data_cached(uploaded_file.getvalue(), tuple(feature_columns))
+
+
+def _load_test_data(file_bytes, feature_columns):
     if not file_bytes or not file_bytes.strip():
         raise ValueError(
             "The uploaded CSV is empty. Please choose the exported test_data.csv "
@@ -1738,6 +1751,51 @@ def get_model_scores(model, X):
     )
 
 
+@st.cache_data(show_spinner=False, max_entries=16)
+def evaluate_selected_cached(file_stem, model_mtime_ns, file_bytes, feature_columns):
+    """Cache predictions, scores, metrics and report per model + dataset."""
+    _, X, y = load_test_data_cached(file_bytes, feature_columns)
+    model = load_model(file_stem, model_mtime_ns)
+    predictions, scores, metrics = evaluate_model(model, X, y)
+    report = classification_report(
+        y,
+        predictions,
+        labels=[-1, 1],
+        target_names=["Legitimate", "Phishing"],
+        output_dict=True,
+        zero_division=0,
+    )
+    class_cm = confusion_matrix(y, predictions, labels=[-1, 1])
+    return predictions, scores, metrics, report, class_cm
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def comparison_cached(file_bytes, feature_columns, model_mtimes):
+    """Evaluate every classifier once per dataset."""
+    _, X, y = load_test_data_cached(file_bytes, feature_columns)
+    metadata = load_metadata()
+    rows, failed = [], []
+    for file_stem, display_name in metadata["models"].items():
+        try:
+            model = load_model(file_stem, dict(model_mtimes)[file_stem])
+            _, _, model_metrics = evaluate_model(model, X, y)
+            rows.append({"Model": display_name, **model_metrics})
+        except Exception as error:
+            failed.append((display_name, str(error)))
+    return rows, failed
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def predictions_csv_cached(file_bytes, feature_columns, file_stem, model_mtime_ns, _results):
+    return _results.to_csv(index=False).encode("utf-8")
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def describe_cached(file_bytes, feature_columns):
+    _, X, _ = load_test_data_cached(file_bytes, feature_columns)
+    return X.describe().T
+
+
 def evaluate_model(model, X, y):
     predictions = model.predict(X)
     scores = get_model_scores(model, X)
@@ -1754,6 +1812,8 @@ def evaluate_model(model, X, y):
 
 
 def plot_confusion_matrix(y_true, predictions):
+    import seaborn as sns  # lazy import: only paid when this chart is drawn
+
     matrix = confusion_matrix(y_true, predictions, labels=[-1, 1])
     fig, ax = plt.subplots(figsize=(6, 4.5))
     sns.heatmap(
@@ -2214,13 +2274,13 @@ if True:
             )
             selected_model_path = MODEL_DIR / f"{selected_stem}.joblib"
 
+            selected_mtime = selected_model_path.stat().st_mtime_ns
+            upload_bytes = uploaded_file.getvalue()
+            feature_key = tuple(feature_columns)
+
             with st.spinner(f"Loading {selected_name} and evaluating the test set..."):
-                selected_model = load_model(
-                    selected_stem,
-                    selected_model_path.stat().st_mtime_ns,
-                )
-                predictions, scores, metrics = evaluate_model(
-                    selected_model, X_test, y_test
+                predictions, scores, metrics, report, class_cm = evaluate_selected_cached(
+                    selected_stem, selected_mtime, upload_bytes, feature_key
                 )
 
             st.markdown("### Performance metrics")
@@ -2232,27 +2292,21 @@ if True:
             chart1, chart2 = st.columns(2)
 
             with chart1:
-                st.pyplot(plot_confusion_matrix(y_test, predictions), use_container_width=True)
+                fig_cm = plot_confusion_matrix(y_test, predictions)
+                st.pyplot(fig_cm, use_container_width=True)
+                plt.close(fig_cm)
             with chart2:
-                st.pyplot(plot_roc_curve(y_test, scores), use_container_width=True)
+                fig_roc = plot_roc_curve(y_test, scores)
+                st.pyplot(fig_roc, use_container_width=True)
+                plt.close(fig_roc)
 
             chart3, chart4 = st.columns([1.05, 0.95], gap="large")
             with chart3:
-                st.pyplot(
-                    plot_precision_recall_curve(y_test, scores),
-                    use_container_width=True,
-                )
+                fig_pr = plot_precision_recall_curve(y_test, scores)
+                st.pyplot(fig_pr, use_container_width=True)
+                plt.close(fig_pr)
 
             with chart4:
-                report = classification_report(
-                    y_test,
-                    predictions,
-                    labels=[-1, 1],
-                    target_names=["Legitimate", "Phishing"],
-                    output_dict=True,
-                    zero_division=0,
-                )
-
                 # Classification report: per-class metrics and average rows.
                 report_table = pd.DataFrame(
                     [
@@ -2339,8 +2393,6 @@ if True:
                     )
 
                 # Class-wise precision cards with the prediction counts behind each value.
-                class_cm = confusion_matrix(y_test, predictions, labels=[-1, 1])
-
                 tp_legitimate = int(class_cm[0, 0])
                 fp_legitimate = int(class_cm[1, 0])
                 tp_phishing = int(class_cm[1, 1])
@@ -2398,7 +2450,9 @@ if True:
 
                 st.download_button(
                     "Download prediction results",
-                    results.to_csv(index=False).encode("utf-8"),
+                    predictions_csv_cached(
+                        upload_bytes, feature_key, selected_stem, selected_mtime, results
+                    ),
                     file_name="phishing_predictions.csv",
                     mime="text/csv",
                 )
@@ -2454,16 +2508,15 @@ if True:
                 with st.spinner(
                     "Loading the saved classifiers and comparing model performance..."
                 ):
-                    comparison_models = load_models()
-
-                    for model_name, model in comparison_models.items():
-                        try:
-                            _, _, model_metrics = evaluate_model(model, X_test, y_test)
-                            comparison_rows.append(
-                                {"Model": model_name, **model_metrics}
-                            )
-                        except Exception as error:
-                            failed_models.append((model_name, str(error)))
+                    model_mtimes = tuple(
+                        (stem, (MODEL_DIR / f"{stem}.joblib").stat().st_mtime_ns)
+                        for stem in metadata["models"]
+                    )
+                    comparison_rows, failed_models = comparison_cached(
+                        uploaded_file.getvalue(),
+                        tuple(feature_columns),
+                        model_mtimes,
+                    )
 
                 if comparison_rows:
                     st.session_state["comparison_results"] = (
@@ -2800,7 +2853,10 @@ if True:
             plt.close(fig)
 
         with st.expander("View descriptive statistics"):
-            st.dataframe(X_test.describe().T, use_container_width=True)
+            st.dataframe(
+                describe_cached(uploaded_file.getvalue(), tuple(feature_columns)),
+                use_container_width=True,
+            )
 
 
 
