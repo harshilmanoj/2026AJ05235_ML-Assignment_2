@@ -34,15 +34,38 @@ st.markdown("""
 h1, h2, h3 { letter-spacing: -0.025em; }
 .student-strip { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem 1.8rem; padding:.85rem .2rem; margin-top:.2rem; margin-bottom:1.1rem; line-height:1.5; border-bottom:1px solid #263449; color:#93a2b8; font-size:.82rem; }
 .student-strip strong { color:#e5ebf4; font-weight:700; }
-.intro-panel { display:grid; grid-template-columns:minmax(0,1fr) 260px; gap:1.5rem; align-items:center; padding:1.55rem 1.7rem; margin-bottom:1.25rem; border:1px solid #2a3a50; border-radius:15px; background:#14243a; }
+.intro-panel {
+    display:grid; grid-template-columns:minmax(0,1fr) minmax(300px,340px);
+    gap:clamp(1.25rem,3vw,2.5rem); align-items:center;
+    padding:clamp(1.25rem,2.5vw,1.8rem); margin-bottom:1.1rem;
+    border:1px solid #2a3a50; border-radius:15px; background:#14243a;
+}
+.intro-panel > div:first-child { min-width:0; }
 .intro-kicker { color:#7dd8c5; font-size:.7rem; font-weight:750; letter-spacing:.13em; }
-.intro-title { color:#f3f6fb; font-size:clamp(1.7rem,3vw,2.45rem); line-height:1.12; font-weight:800; letter-spacing:-.04em; margin:.4rem 0 .55rem; }
-.intro-copy { color:#aab8ca; font-size:.91rem; line-height:1.65; margin:0; max-width:720px; }
-.intro-steps { padding:1rem 1.1rem; border:1px solid #40516a; border-radius:12px; background:#1b2d43; }
-.intro-steps-title { color:#a9bacb; font-size:.67rem; font-weight:750; letter-spacing:.12em; margin-bottom:.7rem; }
-.intro-step { color:#e5ebf4; font-size:.82rem; padding:.45rem 0; border-top:1px solid #35465b; }
-.intro-step:first-of-type { border-top:0; }
-@media(max-width:760px) { .intro-panel { grid-template-columns:1fr; padding:1.2rem; } .intro-steps { display:none; } }
+.intro-title { color:#f3f6fb; font-size:clamp(1.8rem,3vw,2.5rem); line-height:1.12; font-weight:800; letter-spacing:-.04em; margin:.45rem 0 .65rem; }
+.intro-copy { color:#aab8ca; font-size:clamp(.9rem,1.2vw,1rem); line-height:1.65; margin:0; max-width:760px; }
+.intro-steps { padding:.9rem 1.05rem; border:1px solid #40516a; border-radius:12px; background:#1b2d43; }
+.intro-steps-title { color:#a9bacb; font-size:.67rem; font-weight:750; letter-spacing:.12em; margin-bottom:.45rem; }
+.intro-step { display:flex; align-items:flex-start; gap:.55rem; color:#e5ebf4; font-size:.82rem; line-height:1.4; padding:.48rem 0; border-top:1px solid #35465b; }
+.step-number { flex:0 0 1.55rem; color:#8bdacb; font-weight:800; font-variant-numeric:tabular-nums; }
+.intro-step-content { flex:1; min-width:0; }
+.intro-options { display:flex; flex-wrap:wrap; gap:.3rem; margin:.38rem 0 .05rem; }
+.intro-options span {
+    display:inline-block; color:#b9c8d9; font-size:.68rem; line-height:1.3;
+    padding:.22rem .42rem; border:1px solid #3b526b; border-radius:5px;
+    background:#223850; white-space:nowrap;
+}
+@media(max-width:900px) {
+    .intro-panel { grid-template-columns:1fr; gap:1.1rem; }
+    .intro-steps { max-width:none; }
+}
+@media(max-width:560px) {
+    .student-strip { gap:.35rem .9rem; font-size:.74rem; }
+    .intro-panel { padding:1rem; }
+    .intro-title { font-size:1.8rem; }
+    .intro-copy { font-size:.88rem; }
+    .intro-options span { white-space:normal; }
+}
 .section-card { background: #111c2d; border: 1px solid #2a3a50; border-radius: 12px; padding: 1rem 1.1rem; }
 div[data-testid="stMetric"] { background: #111c2d; border: 1px solid #2a3a50; border-radius: 10px; padding: .8rem; }
 .stButton button, .stDownloadButton button { border-radius: 8px; font-weight: 650; }
@@ -66,6 +89,7 @@ div[data-testid="stMetric"] { background: #111c2d; border: 1px solid #2a3a50; bo
 [data-testid="stDataFrame"] { border: 1px solid #2a3a50; border-radius: 9px; }
 /* classification report */
 
+.st-key-classification_report_table { min-height: 360px; display:flex; flex-direction:column; justify-content:center; }
 .classification-table-scroll { width:100%; overflow-x:auto; border-radius:10px; }
 .classification-report-table {
     width:100%; table-layout:fixed; border-collapse:collapse;
@@ -129,11 +153,27 @@ def load_model(file_stem, model_mtime_ns):
 # DATA VALIDATION AND EVALUATION
 @st.cache_data(show_spinner=False, max_entries=3)
 def load_test_data_cached(file_bytes, feature_columns):
-    return _load_test_data(file_bytes, feature_columns)
+    """
+    Return the current two-item format: (X, y).
 
+    Compatibility guard: an earlier app version returned (data, X, y).
+    Normalise that legacy result so callers never fail with an unpacking error.
+    """
+    loaded = _load_test_data(file_bytes, feature_columns)
 
-def load_test_data(uploaded_file, feature_columns):
-    return load_test_data_cached(uploaded_file.getvalue(), tuple(feature_columns))
+    if not isinstance(loaded, tuple):
+        raise ValueError("Dataset loader returned an unexpected result.")
+
+    if len(loaded) == 3:
+        # Legacy format: original DataFrame, feature matrix, target vector.
+        return loaded[1], loaded[2]
+
+    if len(loaded) == 2:
+        return loaded
+
+    raise ValueError(
+        f"Dataset loader returned {len(loaded)} values; expected 2."
+    )
 
 
 def _load_test_data(file_bytes, feature_columns):
@@ -143,14 +183,40 @@ def _load_test_data(file_bytes, feature_columns):
             "file (not an empty placeholder)."
         )
 
+    if len(feature_columns) < 12:
+        raise ValueError(
+            f"The assignment requires at least 12 input features; "
+            f"the selected model expects {len(feature_columns):,}."
+        )
+
+    required_columns = list(feature_columns) + ["target"]
+
+    # Read the header first, then parse only the columns required by the models.
+    # This avoids loading unrelated CSV columns into memory.
     try:
-        data = pd.read_csv(io.BytesIO(file_bytes))
+        csv_header = pd.read_csv(io.BytesIO(file_bytes), nrows=0)
     except pd.errors.EmptyDataError:
         raise ValueError(
             "Pandas could not find a CSV header or data rows. The selected file "
             "may be empty, contain only blank lines, or not be the test_data.csv "
             "exported from your notebook."
         )
+    except UnicodeDecodeError:
+        raise ValueError(
+            "The CSV encoding could not be read. Save the file as UTF-8 CSV "
+            "and upload it again."
+        )
+
+    missing_columns = [
+        column for column in required_columns if column not in csv_header.columns
+    ]
+    if missing_columns:
+        raise ValueError("Missing required columns: " + ", ".join(missing_columns))
+
+    try:
+        data = pd.read_csv(io.BytesIO(file_bytes), usecols=required_columns)
+    except pd.errors.EmptyDataError:
+        raise ValueError("The uploaded CSV contains a header but no data records.")
     except UnicodeDecodeError:
         raise ValueError(
             "The CSV encoding could not be read. Save the file as UTF-8 CSV "
@@ -166,22 +232,7 @@ def _load_test_data(file_bytes, feature_columns):
             f"the uploaded dataset contains {len(data):,}."
         )
 
-    if len(feature_columns) < 12:
-        raise ValueError(
-            f"The assignment requires at least 12 input features; "
-            f"the selected model expects {len(feature_columns):,}."
-        )
-
-    required_columns = list(feature_columns) + ["target"]
-    missing_columns = [
-        column for column in required_columns if column not in data.columns
-    ]
-    if missing_columns:
-        raise ValueError(
-            "Missing required columns: " + ", ".join(missing_columns)
-        )
-
-    raw_features = data[list(feature_columns)].copy()
+    raw_features = data.loc[:, list(feature_columns)]
 
     if raw_features.isna().any().any():
         bad_columns = raw_features.columns[raw_features.isna().any()].tolist()
@@ -216,7 +267,7 @@ def _load_test_data(file_bytes, feature_columns):
             "The test dataset must contain both classes: -1 and 1."
         )
 
-    return data, X, y.astype(int)
+    return X, y.astype(int)
 
 
 def get_model_scores(model, X):
@@ -243,7 +294,7 @@ def get_model_scores(model, X):
 @st.cache_data(show_spinner=False, max_entries=8)
 def evaluate_selected_cached(file_stem, model_mtime_ns, file_bytes, feature_columns):
     from sklearn.metrics import classification_report
-    _, X, y = load_test_data_cached(file_bytes, feature_columns)
+    X, y = load_test_data_cached(file_bytes, feature_columns)
     model = load_model(file_stem, model_mtime_ns)
     predictions, scores, metrics = evaluate_model(model, X, y)
     report = classification_report(
@@ -259,7 +310,7 @@ def evaluate_selected_cached(file_stem, model_mtime_ns, file_bytes, feature_colu
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def comparison_cached(file_bytes, feature_columns, model_mtimes):
-    _, X, y = load_test_data_cached(file_bytes, feature_columns)
+    X, y = load_test_data_cached(file_bytes, feature_columns)
     metadata = load_metadata()
     rows, failed = [], []
     for file_stem, display_name in metadata["models"].items():
@@ -272,14 +323,23 @@ def comparison_cached(file_bytes, feature_columns, model_mtimes):
     return rows, failed
 
 
-@st.cache_data(show_spinner=False, max_entries=8)
-def predictions_csv_cached(file_bytes, feature_columns, file_stem, model_mtime_ns, _results):
-    return _results.to_csv(index=False).encode("utf-8")
+@st.cache_data(show_spinner=False, max_entries=4)
+def prediction_csv_cached(file_bytes, feature_columns, file_stem, model_mtime_ns):
+    """Build the complete prediction export only when explicitly requested."""
+    X, y = load_test_data_cached(file_bytes, feature_columns)
+    predictions, _, _, _ = evaluate_selected_cached(
+        file_stem, model_mtime_ns, file_bytes, feature_columns
+    )
+    export_data = X.copy()
+    export_data["Actual"] = y.to_numpy()
+    export_data["Predicted"] = predictions
+    export_data["Correct"] = export_data["Actual"].to_numpy() == predictions
+    return export_data.to_csv(index=False).encode("utf-8")
 
 
 @st.cache_data(show_spinner=False, max_entries=4)
 def describe_cached(file_bytes, feature_columns):
-    _, X, _ = load_test_data_cached(file_bytes, feature_columns)
+    X, _ = load_test_data_cached(file_bytes, feature_columns)
     return X.describe().T
 
 
@@ -303,9 +363,9 @@ def evaluate_model(model, X, y):
 def plot_confusion_matrix(y_true, predictions):
     from sklearn.metrics import confusion_matrix
     matrix = confusion_matrix(y_true, predictions, labels=[-1, 1])
-    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=100)
+    fig, ax = plt.subplots(figsize=(6, 4.0), dpi=100)
 
-    ax.imshow(matrix, cmap="Blues", interpolation="nearest")
+    ax.imshow(matrix, cmap="Blues", interpolation="nearest", aspect="auto")
     ax.set_xticks([0, 1], labels=["Legitimate", "Phishing"])
     ax.set_yticks([0, 1], labels=["Legitimate", "Phishing"])
     ax.set_xlabel("Predicted class")
@@ -325,7 +385,7 @@ def plot_confusion_matrix(y_true, predictions):
     ax.set_yticks([-0.5, 0.5], minor=True)
     ax.grid(which="minor", color="white", linewidth=2)
     ax.tick_params(which="minor", bottom=False, left=False)
-    fig.tight_layout()
+    fig.tight_layout(pad=1.15)
     return fig
 
 
@@ -334,7 +394,7 @@ def plot_roc_curve(y_true, scores):
     fpr, tpr, _ = roc_curve(y_true, scores, pos_label=1)
     auc_value = roc_auc_score(y_true, scores)
 
-    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=100)
+    fig, ax = plt.subplots(figsize=(6, 4.0), dpi=100)
     ax.plot(fpr, tpr, linewidth=2.5, label=f"Model (AUC = {auc_value:.3f})")
     ax.plot([0, 1], [0, 1], linestyle="--", color="grey", label="Random classifier")
     ax.set(
@@ -346,7 +406,7 @@ def plot_roc_curve(y_true, scores):
     )
     ax.legend(loc="lower right")
     ax.grid(alpha=.2)
-    fig.tight_layout()
+    fig.tight_layout(pad=1.15)
     return fig
 
 
@@ -354,7 +414,7 @@ def plot_precision_recall_curve(y_true, scores):
     from sklearn.metrics import precision_recall_curve
     precision, recall, _ = precision_recall_curve(y_true, scores, pos_label=1)
 
-    fig, ax = plt.subplots(figsize=(6, 4.2), dpi=100)
+    fig, ax = plt.subplots(figsize=(6, 4.0), dpi=100)
     ax.plot(recall, precision, linewidth=2.5)
     ax.set(
         xlabel="Recall",
@@ -364,7 +424,7 @@ def plot_precision_recall_curve(y_true, scores):
         ylim=(0, 1.02),
     )
     ax.grid(alpha=.2)
-    fig.tight_layout()
+    fig.tight_layout(pad=1.15)
     return fig
 
 
@@ -397,10 +457,20 @@ st.markdown(
         </div>
         <aside class="intro-steps">
             <div class="intro-steps-title">HOW THE APPLICATION WORKS</div>
-            <div class="intro-step">01 &nbsp; Upload labelled test data</div>
-            <div class="intro-step">02 &nbsp; Evaluate trained classifiers</div>
-            <div class="intro-step">03 &nbsp; Compare model performance</div>
-            <div class="intro-step">04 &nbsp; Explore results and patterns</div>
+            <div class="intro-step"><span class="step-number">01</span><div class="intro-step-content">Upload labelled test data</div></div>
+            <div class="intro-step"><span class="step-number">02</span><div class="intro-step-content">Validate the dataset</div></div>
+            <div class="intro-step">
+                <span class="step-number">03</span>
+                <div class="intro-step-content">
+                    Choose one analysis
+                    <div class="intro-options">
+                        <span>Evaluate a classifier</span>
+                        <span>Compare classifiers</span>
+                        <span>Explore the dataset</span>
+                    </div>
+                </div>
+            </div>
+            <div class="intro-step"><span class="step-number">04</span><div class="intro-step-content">Review results and export predictions</div></div>
         </aside>
     </section>
     """,
@@ -432,7 +502,7 @@ except Exception as error:
     metadata, feature_columns = {}, []
     metadata_error = str(error)
 
-test_data = X_test = y_test = None
+X_test = y_test = None
 data_error = None
 upload_bytes = uploaded_file.getvalue() if uploaded_file is not None else None
 feature_key = tuple(feature_columns)
@@ -445,22 +515,22 @@ elif uploaded_file is not None:
         data_error = "The uploaded CSV is empty."
     else:
         try:
-            test_data, X_test, y_test = load_test_data_cached(upload_bytes, feature_key)
+            X_test, y_test = load_test_data_cached(upload_bytes, feature_key)
         except Exception as error:
             data_error = str(error)
 
 if uploaded_file is not None and not metadata_error:
     if data_error:
         st.error(f"Dataset validation failed: {data_error}")
-    elif test_data is not None:
+    elif X_test is not None:
         c1, c2, c3 = st.columns(3)
-        c1.metric("Test records", f"{len(test_data):,}")
+        c1.metric("Test records", f"{len(X_test):,}")
         c2.metric("Input features", len(feature_columns))
         c3.metric("Target classes", y_test.nunique())
         st.success(f"Dataset ready · {uploaded_file.name}")
 
 # Navigation is deliberately below upload and validation.
-if uploaded_file is not None and test_data is not None and not metadata_error and not data_error:
+if uploaded_file is not None and X_test is not None and not metadata_error and not data_error:
     st.markdown("---")
     st.markdown("### 2. Choose an analysis")
     selected_page = st.radio(
@@ -502,7 +572,7 @@ if selected_page == "Model Evaluation":
         st.error(f"Dataset could not be loaded: {data_error}")
     else:
         top1, top2, top3 = st.columns(3)
-        top1.metric("Test records", f"{len(test_data):,}")
+        top1.metric("Test records", f"{len(X_test):,}")
         top2.metric("Input features", len(feature_columns))
         top3.metric("Available classifiers", len(metadata["models"]))
 
@@ -564,21 +634,20 @@ if selected_page == "Model Evaluation":
 
             with chart1:
                 fig_cm = plot_confusion_matrix(y_test, predictions)
-                st.pyplot(fig_cm, use_container_width=True)
+                st.pyplot(fig_cm, use_container_width=True, clear_figure=False)
                 plt.close(fig_cm)
             with chart2:
                 fig_roc = plot_roc_curve(y_test, scores)
-                st.pyplot(fig_roc, use_container_width=True)
+                st.pyplot(fig_roc, use_container_width=True, clear_figure=False)
                 plt.close(fig_roc)
 
             chart3, chart4 = st.columns(2, gap="large")
             with chart3:
                 fig_pr = plot_precision_recall_curve(y_test, scores)
-                st.pyplot(fig_pr, use_container_width=True)
+                st.pyplot(fig_pr, use_container_width=True, clear_figure=False)
                 plt.close(fig_pr)
 
             with chart4:
-                st.markdown("#### Classification report")
                 # Classification report: per-class metrics and average rows.
                 report_table = pd.DataFrame(
                     [
@@ -627,6 +696,7 @@ if selected_page == "Model Evaluation":
                     )
 
                 with st.container(key="classification_report_table", border=True):
+                    st.markdown("#### Classification report")
                     st.markdown(
                         f"""
                         <div class="classification-table-scroll">
@@ -647,21 +717,43 @@ if selected_page == "Model Evaluation":
                         unsafe_allow_html=True,
                     )
 
-            with st.expander("View test data and predictions"):
-                results = X_test.copy()
-                results["Actual"] = y_test.to_numpy()
-                results["Predicted"] = predictions
-                results["Correct"] = results["Actual"] == results["Predicted"]
-                st.dataframe(results.head(100), use_container_width=True)
-
-                st.download_button(
-                    "Download prediction results",
-                    predictions_csv_cached(
-                        upload_bytes, feature_key, selected_stem, selected_mtime, results
-                    ),
-                    file_name="phishing_predictions.csv",
-                    mime="text/csv",
+            if st.checkbox(
+                "Show test data and prediction preview",
+                key="show_prediction_preview",
+            ):
+                preview = X_test.head(100).copy()
+                preview["Actual"] = y_test.head(100).to_numpy()
+                preview["Predicted"] = predictions[:100]
+                preview["Correct"] = (
+                    preview["Actual"].to_numpy() == preview["Predicted"].to_numpy()
                 )
+                st.dataframe(preview, use_container_width=True)
+                st.caption("Preview limited to the first 100 records.")
+
+                export_signature = (
+                    selected_stem,
+                    selected_mtime,
+                    hashlib.sha256(upload_bytes).hexdigest(),
+                )
+
+                if st.button("Prepare full prediction CSV", key="prepare_prediction_csv"):
+                    with st.spinner("Preparing prediction export..."):
+                        st.session_state["prediction_csv_data"] = prediction_csv_cached(
+                            upload_bytes, feature_key, selected_stem, selected_mtime
+                        )
+                        st.session_state["prediction_csv_signature"] = export_signature
+
+                if (
+                    st.session_state.get("prediction_csv_signature") == export_signature
+                    and st.session_state.get("prediction_csv_data") is not None
+                ):
+                    st.download_button(
+                        "Download prediction results",
+                        st.session_state["prediction_csv_data"],
+                        file_name="phishing_predictions.csv",
+                        mime="text/csv",
+                        key="download_prediction_csv",
+                    )
 
         except Exception as error:
             st.error(f"Could not evaluate this model: {error}")
@@ -1006,11 +1098,13 @@ if selected_page == "Dataset Explorer":
         st.error(f"Dataset could not be loaded: {data_error}")
     else:
         d1, d2 = st.columns(2)
-        d1.metric("Rows", f"{test_data.shape[0]:,}")
-        d2.metric("Columns", test_data.shape[1])
+        d1.metric("Rows", f"{X_test.shape[0]:,}")
+        d2.metric("Columns", X_test.shape[1] + 1)
 
         st.markdown("### Dataset preview")
-        st.dataframe(test_data.head(20), use_container_width=True)
+        dataset_preview = X_test.head(20).copy()
+        dataset_preview["target"] = y_test.head(20).to_numpy()
+        st.dataframe(dataset_preview, use_container_width=True)
 
         left, right = st.columns(2)
 
@@ -1047,11 +1141,16 @@ if selected_page == "Dataset Explorer":
             st.pyplot(fig, use_container_width=True)
             plt.close(fig)
 
-        with st.expander("Optional data-quality checks"):
-            st.metric("Missing values", int(test_data.isna().sum().sum()))
-            st.metric("Duplicate rows", int(test_data.duplicated().sum()))
+        if st.checkbox("Run optional data-quality checks", key="run_data_quality"):
+            missing_count = int(X_test.isna().sum().sum() + y_test.isna().sum())
+            duplicate_count = int(
+                pd.concat([X_test, y_test.rename("target")], axis=1).duplicated().sum()
+            )
+            q1, q2 = st.columns(2)
+            q1.metric("Missing values", missing_count)
+            q2.metric("Duplicate rows", duplicate_count)
 
-        with st.expander("View descriptive statistics"):
+        if st.checkbox("Show descriptive statistics", key="show_descriptive_stats"):
             st.dataframe(
                 describe_cached(upload_bytes, feature_key),
                 use_container_width=True,
