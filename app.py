@@ -89,14 +89,18 @@ div[data-testid="stMetric"] { background: #111c2d; border: 1px solid #2a3a50; bo
 [data-testid="stDataFrame"] { border: 1px solid #2a3a50; border-radius: 9px; }
 /* classification report */
 
-.st-key-classification_report_table { min-height: 360px; display:flex; flex-direction:column; justify-content:center; }
+.st-key-classification_report_table {
+    aspect-ratio: 6 / 4; display:flex; flex-direction:column; justify-content:center;
+    background:#111a29; border-radius:10px; padding:.6rem 1rem; box-sizing:border-box;
+}
+.report-title { text-align:center; color:#edf2fa; font-size:1rem; font-weight:700; margin:0 0 .7rem; }
 .classification-table-scroll { width:100%; overflow-x:auto; border-radius:10px; }
 .classification-report-table {
     width:100%; table-layout:fixed; border-collapse:collapse;
     font-size:.78rem; background:#111c2d; border:1px solid #35445a;
 }
 .classification-report-table th, .classification-report-table td {
-    padding:.72rem .48rem; border:1px solid #35445a;
+    padding:.5rem .4rem; border:1px solid #35445a;
     text-align:center; overflow-wrap:anywhere;
 }
 .classification-report-table thead th {
@@ -109,6 +113,26 @@ div[data-testid="stMetric"] { background: #111c2d; border: 1px solid #2a3a50; bo
 .classification-report-table tbody tr.average-row th,
 .classification-report-table tbody tr.average-row td {
     background:#1b2a40; font-weight:750;
+}
+
+/* Pinned analysis switcher: three equal cards, same look as the metric cards */
+header[data-testid="stHeader"] { background:#0b1220; }
+div:has(> .st-key-analysis_nav) { position: sticky; top: 3.6rem; z-index: 999; }
+.st-key-analysis_nav {
+    background:#0b1220; padding:.35rem 0 .5rem;
+    border-bottom:1px solid #2a3a50;
+    box-shadow:0 10px 18px -10px rgba(0,0,0,.7);
+}
+.analysis-title { color:#fafafa; font-size:1.75rem; font-weight:600; line-height:1.25; letter-spacing:-0.025em; margin:0 0 .5rem; }
+.st-key-analysis_nav button {
+    width:100%; height:2.5rem; min-height:2.5rem; padding:0 .75rem; border-radius:8px;
+    background:#111c2d; border:1px solid #2a3a50; color:#cbd7e6;
+}
+.st-key-analysis_nav button p { font-size:.92rem; font-weight:700; margin:0; }
+.st-key-analysis_nav button:hover { border-color:#d9ad68; color:#f0dcae; }
+.st-key-analysis_nav button[data-testid="stBaseButton-primary"],
+.st-key-analysis_nav button[kind="primary"] {
+    background:#3a3020; border:1px solid #d9ad68; color:#f7d58d;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -530,16 +554,30 @@ if uploaded_file is not None and not metadata_error:
         st.success(f"Dataset ready · {uploaded_file.name}")
 
 # Navigation is deliberately below upload and validation.
+# It is always shown once a valid dataset is uploaded, so you can switch
+# between analyses at any time (normal flow, so it never overlaps content).
 if uploaded_file is not None and X_test is not None and not metadata_error and not data_error:
     st.markdown("---")
-    st.markdown("### 2. Choose an analysis")
-    selected_page = st.radio(
-        "Select functionality",
-        ["Model Evaluation", "Model Comparison", "Dataset Explorer"],
-        horizontal=True,
-        label_visibility="collapsed",
-        key="active_analysis",
-    )
+    ANALYSES = ["Model Evaluation", "Model Comparison", "Dataset Explorer"]
+    if st.session_state.get("active_analysis") not in ANALYSES:
+        st.session_state["active_analysis"] = ANALYSES[0]
+
+    def _set_analysis(name):
+        st.session_state["active_analysis"] = name
+
+    with st.container(key="analysis_nav"):
+        st.markdown('<div class="analysis-title">2. Choose an analysis</div>', unsafe_allow_html=True)
+        nav_cols = st.columns(3, gap="small")
+        for nav_col, name in zip(nav_cols, ANALYSES):
+            nav_col.button(
+                name,
+                key=f"nav_{name}",
+                type="primary" if st.session_state["active_analysis"] == name else "secondary",
+                use_container_width=True,
+                on_click=_set_analysis,
+                args=(name,),
+            )
+    selected_page = st.session_state["active_analysis"]
 else:
     selected_page = None
     st.info("Upload a valid test CSV to unlock Model Evaluation, Model Comparison and Dataset Explorer.")
@@ -695,8 +733,8 @@ if selected_page == "Model Evaluation":
                         '</tr>'
                     )
 
-                with st.container(key="classification_report_table", border=True):
-                    st.markdown("#### Classification report")
+                with st.container(key="classification_report_table", border=False):
+                    st.markdown('<div class="report-title">Classification report</div>', unsafe_allow_html=True)
                     st.markdown(
                         f"""
                         <div class="classification-table-scroll">
