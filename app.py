@@ -69,22 +69,25 @@ h1, h2, h3 { letter-spacing: -0.025em; }
 .section-card { background: #111c2d; border: 1px solid #2a3a50; border-radius: 12px; padding: 1rem 1.1rem; }
 div[data-testid="stMetric"] { background: #111c2d; border: 1px solid #2a3a50; border-radius: 10px; padding: .8rem; }
 .stButton button, .stDownloadButton button { border-radius: 8px; font-weight: 650; }
-.st-key-model_picker_panel [data-testid="stSelectbox"] { width:100%; margin-top:.65rem; }
-.st-key-model_picker_panel [data-testid="stSelectbox"] > label {
-    color:#e8bd73 !important; font-size:.76rem !important; font-weight:800 !important;
-    letter-spacing:.09em; margin-bottom:.4rem;
+.st-key-model_picker_panel { background:#111c2d; border-color:#2a3a50 !important; border-radius:12px; padding:.4rem .5rem .6rem; }
+.model-picker-heading { color:#f3f6fb; font-size:1.2rem; font-weight:700; letter-spacing:-.01em; margin:0 0 .2rem; }
+.model-picker-copy { color:#93a2b8; font-size:.88rem; line-height:1.45; margin:0; }
+.model-picker-meta { display:flex; flex-direction:column; align-items:flex-end; text-align:right; }
+.model-picker-meta-label { color:#93a2b8; font-size:.66rem; font-weight:750; letter-spacing:.12em; }
+.model-picker-meta-value { color:#f7d58d; font-size:1.05rem; font-weight:800; }
+.st-key-model_picker_panel [data-testid="stSelectbox"] { width:100%; margin-top:.4rem; }
+.st-key-model_picker_panel [data-testid="stWidgetLabel"] p {
+    color:#e8bd73; font-size:.72rem; font-weight:800; letter-spacing:.1em;
 }
+.st-key-model_picker_panel [data-baseweb="select"] {
+    background:#17283f; border:1.5px solid #d9ad68; border-radius:10px;
+}
+.st-key-model_picker_panel [data-baseweb="select"]:hover { border-color:#f0cc8b; }
 .st-key-model_picker_panel [data-baseweb="select"] > div {
-    min-height:52px !important; background:#17283f !important;
-    border:1.5px solid #d9ad68 !important; border-radius:10px !important;
-    box-shadow:0 0 0 2px rgba(217,173,104,.12) !important;
+    background:transparent !important; border:0 !important; min-height:3rem;
 }
-.st-key-model_picker_panel [data-baseweb="select"] * {
-    color:#f5e6c9 !important; font-weight:700 !important;
-}
-.st-key-model_picker_panel [data-baseweb="select"] svg {
-    fill:#e8bd73 !important; color:#e8bd73 !important;
-}
+.st-key-model_picker_panel [data-baseweb="select"] * { color:#f5e6c9 !important; font-weight:600; }
+.st-key-model_picker_panel [data-baseweb="select"] svg { fill:#e8bd73 !important; color:#e8bd73 !important; }
 [data-testid="stFileUploader"] section { background: #111c2d; border: 1px dashed #64748b; border-radius: 10px; }
 [data-testid="stDataFrame"] { border: 1px solid #2a3a50; border-radius: 9px; }
 /* classification report */
