@@ -106,7 +106,7 @@ Standardization is applied through pipelines for Logistic Regression, KNN, and S
 
 ## 3. GitHub Repository Link
 
-**GitHub Repository:** https://github.com/harshilmanoj/2026AJ05235_ML-Assignment_2
+**GitHub Repository:** https://github.com/harshilmanoj/2026AJ05235_ML-Assignment_2/
 
 The repository contains the application source code, trained model files, test dataset, dependency list, and this README.
 
